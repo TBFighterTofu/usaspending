@@ -199,41 +199,40 @@ class USASpendingAwards(USASpending):
         if award_folder.exists():
             return
         
-        # url = AWARD_DOWNLOAD
-        # kwargs = { "award_id": generated_award_id }
-        # res = {}
+        pending_file = self.downloads_folder() / f"pending_{generated_award_id}.json"
+        
+        if pending_file.exists():
+            with open(pending_file) as f:
+                res2 = json.load(f)
+            file_url = res2["file_url"]
+        else:
+            url = AWARD_DOWNLOAD
+            kwargs = { "award_id": generated_award_id }
+            res = {}
 
-        # # wait for the request to go through
-        # while "status_url" not in res:
-        #     response = requests.post(url, json = kwargs)
-        #     res = response.json()
-        #     if "status_url" not in res:
-        #         if "detail" in res:
-        #             print(res["detail"], kwargs)
-        #             return
-        #         print("waiting for status...", res)
-        #         time.sleep(1)
+            # wait for the request to go through
+            while "status_url" not in res:
+                response = requests.post(url, json = kwargs)
+                res = response.json()
+                if "status_url" not in res:
+                    if "detail" in res:
+                        print(res["detail"], kwargs)
+                        return
+                    print("waiting for status...", res)
+                    time.sleep(1)
 
-        # # wait for the download to be ready
-        # status_url = res["status_url"]
-        # file_url = res["file_url"]
-        # print(file_url)
-        # status_str = "running"
-        # while status_str == "running":
-        #     res2 = requests.get(status_url).json()
-        #     if "status" in res2:
-        #         status_str = res2["status"]
-        #     print(f"    {status_str}, {res2['seconds_elapsed']} seconds elapsed")
-        #     if status_str == "running":
-        #         time.sleep(1)
-
-        with open(self.summary_folder() / f"award_links.txt") as f:
-            line = ""
-            while generated_award_id not in line:
-                line = f.readline()
-            file_url = f.readline().replace("\n", "")
+            # wait for the download to be ready
+            status_url = res["status_url"]
+            file_url = res["file_url"]
             print(file_url)
-            status_str = "finished"
+            status_str = "running"
+            while status_str == "running":
+                res2 = requests.get(status_url).json()
+                if "status" in res2:
+                    status_str = res2["status"]
+                print(f"    {status_str}, {res2['seconds_elapsed']} seconds elapsed")
+                if status_str == "running":
+                    time.sleep(1)
 
         # download the file
         if status_str == "finished":
@@ -241,10 +240,10 @@ class USASpendingAwards(USASpending):
             z = zipfile.ZipFile(io.BytesIO(res3.content))
             z.extractall(award_folder)
             print(f"Data extracted to {award_folder}")
-        # else:
-        #     pending_file = self.downloads_folder() / f"pending_{generated_award_id}.json"
-        #     with open(pending_file, "w") as f:
-        #         json.dump(res2, f)
+        else:
+            if not pending_file.exists():
+                with open(pending_file, "w") as f:
+                    json.dump(res2, f)
 
 if __name__ == "__main__":
     awards = USASpendingAwards(AwardType.ALL, 2023, 2024)
