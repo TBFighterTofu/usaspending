@@ -2,8 +2,8 @@ import json
 import pandas as pd
 from dataclasses import dataclass
 
-from .usaspending import DATA_FOLDER, AwardType
-from .awards import USASpendingAwards
+from usa_types import DATA_FOLDER, AwardType, usaid_tas
+from awards import AwardSearchDownload
 
 @dataclass
 class SpendingSummary:
@@ -51,7 +51,7 @@ class USASpendingAnalysis:
     def federal_account_funding(self) -> SpendingSummary:
         summary = SpendingSummary("Federal Account Funding")
         for award_type in AwardType:
-            awards = USASpendingAwards(award_type, 2024, 2025)
+            awards = AwardSearchDownload(usaid_tas(2024))
             file_name = awards.combined_csv("FederalAccountFunding")
             if file_name.exists():
                 contract_fa = pd.read_csv(file_name, index_col = False)

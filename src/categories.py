@@ -1,26 +1,12 @@
-from pathlib import Path
 import pandas as pd
-from enum import Enum, auto
 
-DATA_FOLDER = Path(__file__).parent.parent / "data"
-SPENDING_BY_AWARD = "https://api.usaspending.gov/api/v2/search/spending_by_award/"
-SPENDING_OVER_TIME = "https://api.usaspending.gov/api/v2/search/spending_over_time/"
-SPENDING_BY_TRANSACTION = "https://api.usaspending.gov/api/v2/search/spending_by_transaction/"
-AWARD_DOWNLOAD = "https://api.usaspending.gov/api/v2/download/contract"
+from usa_types import DATA_FOLDER
 
-class AwardType(Enum):
-    CONTRACT = auto()
-    IDV = auto()
-    LOAN = auto()
-    GRANT = auto()
-    DIRECT_PAYMENTS = auto()
-    OTHER = auto()
-    ALL = auto()
+class SpendingCategories:
+    """Class for categorizing awards."""
 
-class USASpending:
-    
-    def _tas(self, year: int) -> str:
-        return f"072-019-{year}/{year+1}-1031-000"
+    def __init__(self, tas_code: str):
+        self.tas_code = tas_code
     
     def category_folder(self):
         return DATA_FOLDER / "categories"
