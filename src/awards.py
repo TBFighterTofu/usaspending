@@ -363,7 +363,10 @@ class AwardSearchDownload:
             # check the status url
             status_dict: dict = requests.get(request_dict["status_url"]).json()
             status = status_dict.get("status", "unknown")
-            print(f"{generated_award_id}    {status}, {status_dict.get('seconds_elapsed', 'unknown')} seconds elapsed")
+            if status == "ready":
+                print(f"{generated_award_id}    Queued")
+            else:
+                print(f"{generated_award_id}    {status}, {status_dict.get('seconds_elapsed', 'unknown')} seconds elapsed")
             if status == "finished":
                 self._download_files(request_dict["file_url"], generated_award_id)
                 pending_file.unlink()  # delete the pending file so we know we already downloaded this data
@@ -412,12 +415,42 @@ class AwardSearchDownload:
         while attempt < tries:
             pending = self.check_download_status(generated_award_id)
             if pending:
-                # there is still a download pending. wait 1 second and ask again
+                # there is still a download pending. wait and ask again
                 attempt += 1
-                time.sleep(1)
+                time.sleep(5)
             else:
                 return pending
         return pending
+
+    def download_awards_chunk(self, awards: list[str], orig_num_rows: int, stop_on_errors: bool, starting_num: int) -> None:
+        # iterate through awards and try to download all the awards
+        new_pending_list = awards.copy()
+        while len(new_pending_list) > 0:
+            i = 0
+            num_rows = len(new_pending_list) + starting_num
+            # reset the list of pending awards
+            pending_list = new_pending_list
+            new_pending_list = []
+            for award_id in pending_list:
+                try:
+                    print(f"{starting_num + i + 1} / {num_rows} ({orig_num_rows}) {award_id}")
+                    award_pending = self.download_award_data(award_id)
+                    if award_pending:
+                        # if the award still has a download pending, put it back in the list of pending awards
+                        new_pending_list.append(award_id)
+                except KeyboardInterrupt:
+                    raise KeyboardInterrupt
+                except Exception as e:
+                    if "Connection aborted" in str(e):
+                        print("The server aborted the connection because we've made too many requests. Waiting 5 minutes...")
+                        time.sleep(60*5)
+                    else:
+                        print(e)
+                        if stop_on_errors:
+                            raise e
+                        else:
+                            pass
+                i += 1
 
     def download_awards(self, stop_on_errors: bool = True) -> None:
         """Download the award data zip for all of the awards in the awards json, and extract it to a data folder.
@@ -432,29 +465,21 @@ class AwardSearchDownload:
         new_pending_list = self.generated_award_ids() 
         orig_num_rows = len(new_pending_list)
 
-        # iterate through awards and try to download all the awards
-        while len(new_pending_list) > 0:
-            i = 0
-            num_rows = len(new_pending_list)
-            # reset the list of pending awards
-            pending_list = new_pending_list
-            new_pending_list = []
-            for award_id in pending_list:
-                try:
-                    print(f"{i + 1} / {num_rows} ({orig_num_rows}) {award_id}")
-                    award_pending = self.download_award_data(award_id)
-                    if award_pending:
-                        # if the award still has a download pending, put it back in the list of pending awards
-                        new_pending_list.append(award_id)
-                except KeyboardInterrupt:
-                    raise KeyboardInterrupt
-                except Exception as e:
-                    print(e)
-                    if stop_on_errors:
-                        raise e
-                    else:
-                        pass
-                i += 1
+        
+        chunk_size = 10
+        j0 = 0
+        jf = j0 + chunk_size
+
+        while jf <= len(new_pending_list):
+            print(f"Downloading award {j0} to {jf}")
+            self.download_awards_chunk(
+                awards = new_pending_list[j0:min(len(new_pending_list),jf)],
+                orig_num_rows = orig_num_rows,
+                stop_on_errors = stop_on_errors,
+                starting_num = j0
+            )
+            j0 = j0 + chunk_size
+            jf = jf + chunk_size
 
     def generated_award_ids(self) -> list[str]:
         """A list of all of the long award IDs that we're looking for, saved in our award json."""

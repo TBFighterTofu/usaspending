@@ -8,8 +8,8 @@ from src.awards import AwardSearchDownload
 import pandas as pd
 from datetime import datetime
 
-#------------------
-#------------------
+#-------------------------------------------------------------
+#-------------------------------------------------------------
 #### FILL THESE OUT
 
 # the tas number I care about
@@ -29,8 +29,8 @@ summary_name = "my_awards"
 critical_download_date = datetime(year = 2026, month = 1, day = 1)
 
 #### THANKS FOR FILLING THOSE OUT
-#------------------
-#------------------
+#-------------------------------------------------------------
+#-------------------------------------------------------------
 
 downloader = AwardSearchDownload(
     tas_code = tas_code,
