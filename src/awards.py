@@ -411,6 +411,9 @@ class AwardSearchDownload:
         if not request_succeeded:
             return False
         
+        # wait 5 seconds for the download to start
+        time.sleep(5)
+        
         attempt = 0
         while attempt < tries:
             pending = self.check_download_status(generated_award_id)
@@ -443,6 +446,7 @@ class AwardSearchDownload:
                 except Exception as e:
                     if "Connection aborted" in str(e):
                         print("The server aborted the connection because we've made too many requests. Waiting 5 minutes...")
+                        new_pending_list.append(award_id)
                         time.sleep(60*5)
                     else:
                         print(e)
@@ -470,7 +474,7 @@ class AwardSearchDownload:
         j0 = 0
         jf = j0 + chunk_size
 
-        while jf <= len(new_pending_list):
+        while j0 <= len(new_pending_list):
             print(f"Downloading award {j0} to {jf}")
             self.download_awards_chunk(
                 awards = new_pending_list[j0:min(len(new_pending_list),jf)],
@@ -507,18 +511,21 @@ class AwardSearchDownload:
             for file in award_folder.rglob(f"*{tag}_1.csv"):
                 # import the csv as a pandas dataframe and filter it to only rows with this tas
                 df = pd.read_csv(file)
-                if tag == "FederalAccountFunding":
-                    # in the FederalAccountFunding file, the tas code is stored under the treasury_account_symbol column
-                    filtered = df[df["treasury_account_symbol"] == self.tas_code]
-                elif tag == "TransactionHistory":
-                    # in the TransactionHistory file, all relevant tas codes are combined into the column treasury_accounts_funding_this_award
-                    filtered = df[df["treasury_accounts_funding_this_award"].str.contains(self.tas_code)]
-                elif tag == "Sub-Awards":
-                    # in the TransactionHistory file, all relevant tas codes are combined into the column prime_award_treasury_accounts_funding_this_award
-                    filtered = df[df["prime_award_treasury_accounts_funding_this_award"].str.contains(self.tas_code)]
+                if len(df) > 0:
+                    if tag == "FederalAccountFunding":
+                        # in the FederalAccountFunding file, the tas code is stored under the treasury_account_symbol column
+                        filtered = df[df["treasury_account_symbol"] == self.tas_code]
+                    elif tag == "TransactionHistory":
+                        # in the TransactionHistory file, all relevant tas codes are combined into the column treasury_accounts_funding_this_award
+                        tas_list = df["treasury_accounts_funding_this_award"].fillna("")
+                        filtered = df[tas_list.str.contains(self.tas_code)]
+                    elif tag == "Sub-Awards":
+                        # in the TransactionHistory file, all relevant tas codes are combined into the column prime_award_treasury_accounts_funding_this_award
+                        tas_list = df["prime_award_treasury_accounts_funding_this_award"].fillna("")
+                        filtered = df[tas_list.str.contains(self.tas_code)]
 
-                # add the pandas dataframe to the list of dataframes
-                df_list.append(filtered)
+                    # add the pandas dataframe to the list of dataframes
+                    df_list.append(filtered)
 
         if len(df_list) > 0:
             # combine all dataframes into one big dataframe
