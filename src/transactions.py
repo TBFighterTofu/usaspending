@@ -3,9 +3,9 @@ import pandas as pd
 import time
 import requests
 
-from .usaspending import USASpending, DATA_FOLDER, SPENDING_BY_TRANSACTION
+from usa_types import DATA_FOLDER, SPENDING_BY_TRANSACTION, usaid_tas
 
-class USASpendingTransactions(USASpending):
+class USASpendingTransactions:
     
     def __init__(self, min_year: int, max_year: int):
         self.min_year = min_year
@@ -68,7 +68,7 @@ class USASpendingTransactions(USASpending):
     def _transaction_params(self, year: int, page: int) -> dict:
         return {
             "filters": {
-                "tas_codes": {"require": [[self._tas(year)]]},
+                "tas_codes": {"require": [[usaid_tas(year)]]},
                 "award_type_codes": ["A", "B", "C", "D", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "IDV_A", "IDV_B", "IDV_B_A", "IDV_B_B", "IDV_B_C", "IDV_C", "IDV_D", "IDV_E"]
             },
             "fields": ["internal_id", "Action Date", "Action Type", "Assistance Listing", "Award ID", "Award Type", "Awarding Agency", "Awarding Sub Agency", "Funding Agency", "Funding Sub Agency", "Issued Date", "Last Date to Order", "Loan Value", "Mod", "NAICS", "PSC", "Primary Place of Performance", "Recipient Location", "Recipient Name", "Recipient UEI", "Subsidy Cost", "Transaction Amount", "Transaction Description"],

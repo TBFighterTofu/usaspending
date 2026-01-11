@@ -1,4 +1,6 @@
-*award_links.txt
+data/downloads/*
+data/pending_downloads/*
+data/summaries/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
