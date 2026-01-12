@@ -37,7 +37,7 @@ class AwardSearchDownload:
         if award_ids is not None:
             if summary_name is None:
                 raise ValueError("Please provide a summary_name for this set of awards.")
-            self.summary_name = summary_name
+            self.summary_name = summary_name.replace(r"/", "_")
         else:
             self.summary_name = self.tas_code.replace(r"/", "_")
 
@@ -436,7 +436,7 @@ class AwardSearchDownload:
             new_pending_list = []
             for award_id in pending_list:
                 try:
-                    print(f"{starting_num + i + 1} / {num_rows} ({orig_num_rows}) {award_id}")
+                    print(f"{starting_num + i + 1} / {orig_num_rows} {award_id}")
                     award_pending = self.download_award_data(award_id)
                     if award_pending:
                         # if the award still has a download pending, put it back in the list of pending awards
