@@ -26,7 +26,7 @@ for year in [2022, 2021, 2020, 2019, 2018]:
 
 for tas_code in tas_codes:
 
-    print(f"Downloading data for tas {tas_code}")
+    print(f"Downloading data for TAS {tas_code}")
 
     #### THANKS FOR FILLING THOSE OUT
     #-------------------------------------------------------------

@@ -675,6 +675,14 @@ class AwardSearchDownload:
         else:
             return None
 
+    def _make_tabbed_line(self, title: str, pa: float, faf: float):
+        diff = pa - faf
+        if pa != 0:
+            diff_pct = str(int(diff / pa * 100)).rjust(2)
+        else:
+            diff_pct = "--"
+        return "".join([f"    {title}:".ljust(18), " PA:", f" ${pa:,}".rjust(15)," / FA: ", f"${faf:,}".rjust(15), " / Missing:", f" ${(diff):,}".rjust(15), f" ({diff_pct}%)" ])
+
     def _compare_pa_to_faf(self, activity: dict, funding: pd.DataFrame, title: str) -> list[str]:
         """Compare a program activity year to a FederalAccountFunding year, and return a list of strings to print out or write to file."""
         lines = []
@@ -685,8 +693,8 @@ class AwardSearchDownload:
         faf_obligated = int(funding["transaction_obligated_amount"].sum())
         faf_gross_outlay = int(funding["transaction_outlay_amount"].sum())
         lines.append(f"  {title}")
-        lines.append(f"\tObligated:\t\tPA: ${pa_obligated:,}.\tFAF: ${faf_obligated:,}.\tMissing: ${(pa_obligated - faf_obligated):,}")
-        lines.append(f"\tGross Outlay:\tPA: ${pa_gross_outlay:,}.\tFAF: ${faf_gross_outlay:,}.\tMissing: ${(pa_gross_outlay - faf_gross_outlay):,}")
+        lines.append(self._make_tabbed_line("Obligated", pa_obligated, faf_obligated))
+        lines.append(self._make_tabbed_line("Gross Outlay", pa_gross_outlay, faf_gross_outlay))
         return lines
 
     def _find_child(self, activity: dict, child: str):
