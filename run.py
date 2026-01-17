@@ -1,46 +1,40 @@
-"""To download data, fill out the requested fields, and run this script using the command:
+# """To download data, fill out the requested fields, and run this script using the command:
 
-python run.py
+# python run.py
 
-"""
+# """
 
 from src.awards import AwardSearchDownload
-import pandas as pd
-from datetime import datetime
 
 #-------------------------------------------------------------
 #-------------------------------------------------------------
 #### FILL THESE OUT
 
-# the tas number I care about
-tas_code = "072-019-2024/2025-1031-000"  
+object_class_types = []
+object_class_codes = []
 
-# if I'm looking for a few specific awards:
-award_ids = ["72061521CA00007", "72061521CA00008"]  
+tas_codes = []
+for year in [2024, 2023, 2022, 2021, 2020, 2019]:
+    tas_codes.append(f"072-019-{year}/{year+1}-1031-000")
+for year in [2024]:
+    tas_codes.append(f"072-019-{year}/{year+4}-1031-000")
+for year in [2022, 2021, 2020, 2019, 2018]:
+    tas_codes.append(f"072-{year}/{year+1}-1021-000")
+    tas_codes.append(f"072-{year}/{year+5}-1021-000")
 
-# or if I have a spreadsheet in this folder with all the award ids, and no header, called awards_list.csv:
-awards_table = pd.read_csv("awards_list.csv", header = None, names = ["award_id"])
-award_ids = list(awards_table["award_id"])
 
-# a name for my export files
-summary_name = "my_awards"  
 
-# re-download award data if it was last downloaded before this date
-critical_download_date = datetime(year = 2026, month = 1, day = 1)
+for tas_code in tas_codes:
 
-#### THANKS FOR FILLING THOSE OUT
-#-------------------------------------------------------------
-#-------------------------------------------------------------
+    print(f"Downloading data for tas {tas_code}")
 
-downloader = AwardSearchDownload(
-    tas_code = tas_code,
-    award_ids = award_ids,
-    summary_name = summary_name,
-    critical_download_date = critical_download_date
-)  # an object that can download the data you want from usaspending
+    #### THANKS FOR FILLING THOSE OUT
+    #-------------------------------------------------------------
+    #-------------------------------------------------------------
 
-downloader.search_awards()  # get summary data for all the awards, and look up their long award IDs, which we'll need for downloading the awards
+    downloader = AwardSearchDownload(
+        tas_code = tas_code,
+    )  # an object that can download the data you want from usaspending
 
-downloader.download_awards()  # download the zip file for each award
+    downloader.run_all()
 
-downloader.combine_awards()  # combine and filter the data into a single csv

@@ -7,18 +7,15 @@ import io
 import requests
 from datetime import datetime
 
-from .usa_types import AwardType, DATA_FOLDER, SPENDING_BY_AWARD, AWARD_DOWNLOAD, usaid_tas
+from .usa_types import AwardType, DATA_FOLDER, SPENDING_BY_AWARD, AWARD_DOWNLOAD, award_type_codes, program_activity_codes
 
 
 class AwardSearchDownload:
     """Finds the list of awards for a specific TAS code, downloads the zipfiles for all of the awards, and combines those zip files into a single CSV.
     
-    For example, if you want to find all awards for 2024/2025 USAID, download their data, and combine the transations for that TAS into one csv file, run this:
+    For example, if you want to find program activity and all awards for 2024/2025 USAID, download their data, combine the transations for that TAS into one csv file, and compare the results from program activity and individual transations, run this:
         awards = USASpendingAwards("072-019-2024/2025-1031-000")
         awards.run_all()
-
-    If you want to re-download the list of awards:
-        awards.search_awards(overwrite=True)
     
     """
 
@@ -32,7 +29,7 @@ class AwardSearchDownload:
             summary_name: str | None = None,
             critical_download_date: datetime | None = None):
         self.tas_code = tas_code
-        self.award_ids = award_ids    
+        self.award_ids = award_ids  
 
         if award_ids is not None:
             if summary_name is None:
@@ -48,9 +45,12 @@ class AwardSearchDownload:
         self.create_folders()
 
     def run_all(self):
-        self.search_awards()
-        self.download_awards()
-        self.combine_awards()
+        print(f"Downloading all for {self.summary_name}")
+        self.download_program_activity()  # download the program activity summary
+        self.search_awards()              # download the list of awards
+        self.download_awards()            # download data for each award
+        self.combine_awards()             # combine data into one spreadsheet
+        self.check_summaries()            # check that totals make sense
 
     # -- File names
 
@@ -66,7 +66,16 @@ class AwardSearchDownload:
     def summary_folder(self) -> Path:
         """The folder where we will save summary tables for this set of awards."""
         return self.summary_data_folder() / self.summary_name
+
+    def program_activity_file(self):
+        return self.summary_folder() / f"program_activity_{self.summary_name}.json"
     
+    def summary_check_file(self):
+        return self.summary_folder() / f"summary_check_{self.summary_name}.txt"
+    
+    def summary_downloaded_file(self):
+        return self.summary_folder() / "downloaded.json"
+
     def downloads_folder(self) -> Path:
         """Folder that holds the downloaded and unzipped data folders for all awards."""
         return DATA_FOLDER / "downloads"
@@ -85,25 +94,76 @@ class AwardSearchDownload:
             raise ValueError(f"No file found named {tag}")
         return self.summary_folder() / f"combined_{tag}_{self.summary_name}.csv"
     
+    def check_overwrite(self, filename: Path) -> bool:
+        """Get the time when the requested file was downloaded, and return true if we should overwrite the file.
+        
+        Args:
+            filename: the name of the exported file
+        
+        """
+        if not filename.exists():
+            # file doesn't exist. overwrite it
+            return True
+
+        time_file = self.summary_downloaded_file()
+        if not time_file.exists():
+            # we didn't write down when we made any file. overwrite it.
+            return True
+        if self.critical_download_date is None:
+            # we have no critical download date. don't overwrite it
+            return False
+        with open(time_file) as f:
+            time_dict = json.load(f)
+        file_str = filename.name
+        if file_str not in time_dict:
+            # we didn't write down when we made the file. overwrite it
+            return True
+        downloaded = datetime.fromisoformat(time_dict[file_str])
+        if downloaded >= self.critical_download_date:
+            # we downloaded this after the critical download date. don't overwrite it
+            return False
+        else:
+            # we downloaded this before the critical download date. overwrite it.
+            return True
+    
+    def export_downloaded_time(self, file: Path):
+        """Export the current time as the time when we downloaded this file."""
+        time_file = self.summary_downloaded_file()
+        if not time_file.exists():
+            time_dict = {}
+        else:
+            with open(time_file) as f:
+                time_dict = json.load(f)
+        time_dict[file.name] = datetime.now().isoformat()
+        with open(time_file, "w") as f:
+            json.dump(time_dict, f, indent = 4)
+
+    # -- Downloading summary
+
+    def fiscal_year_range(self):
+        return range(2017, datetime.now().year + 1)
+
+    def download_program_activity(self):
+        """Download the summary of program activity and export it as a json."""
+        # don't overwrite if we already downloaded it
+        filename = self.program_activity_file()
+        overwrite = self.check_overwrite(filename)
+        if not overwrite:
+            return
+
+        out = {}
+        for fiscal_year in self.fiscal_year_range():
+            url = f"https://api.usaspending.gov/api/v2/agency/treasury_account/{self.tas_code}/program_activity?fiscal_year={fiscal_year}"
+            response = requests.get(url).json()
+            out[fiscal_year] = response.get("results", {})
+
+        # export the results and save the time when we exported them
+        with open(filename, "w") as f:
+            json.dump(out, f, indent = 4)
+        self.export_downloaded_time(filename)
+
     # -- Searching for awards
      
-    def _award_type_codes(self, award_type: AwardType) -> list[str]:
-        """Get the eligible award type codes for the given award type. We have to provide these to the USASpending API to tell them what kinds of awards we're looking for."""
-        if award_type == AwardType.CONTRACT:
-            return ["A", "B", "C", "D"]
-        elif award_type == AwardType.IDV:
-            return ["IDV_A", "IDV_B", "IDV_B_A", "IDV_B_B", "IDV_B_C", "IDV_C", "IDV_D", "IDV_E"]
-        elif award_type == AwardType.LOAN:
-            return ["07", "08"]
-        elif award_type == AwardType.GRANT:
-            return ["02", "03", "04", "05"]
-        elif award_type == AwardType.DIRECT_PAYMENTS:
-            return ["06", "10"]
-        elif award_type == AwardType.OTHER:
-            return ["09", "11", "-1"]
-        else:
-            return []
-        
     def _award_search_fields(self, award_type: AwardType) -> list[str]:
         """A list of column names to include in the table of awards that we're requesting from the API."""
         base_fields = [
@@ -154,7 +214,7 @@ class AwardSearchDownload:
         query = {
             "filters": {
                 "tas_codes": self._tas_filter(),
-                "award_type_codes": self._award_type_codes(award_type)
+                "award_type_codes": award_type_codes(award_type)
             },
             "fields": self._award_search_fields(award_type),
             "limit": 100, 
@@ -178,7 +238,7 @@ class AwardSearchDownload:
         """
         # get the arguments to pass into the API
         kwargs = self._award_search_filter(page = page, award_type = award_type)
-        print("Looking up awards for ", kwargs, SPENDING_BY_AWARD)
+        print(f"Looking up awards for {award_type.name}, page {page}")
 
         # ask the API for the information
         retval = requests.post(SPENDING_BY_AWARD, json = kwargs)
@@ -219,7 +279,7 @@ class AwardSearchDownload:
                 time.sleep(1)
         return out
     
-    def search_awards(self, overwrite: bool = False):
+    def search_awards(self):
         """Find all of the awards for the TAS code and award type that we care about, and export the table of awards to a json.
         
         Args:
@@ -228,7 +288,9 @@ class AwardSearchDownload:
         Output: exports a json, where the keys are the long award ID, and the values are a dictionary of summary data for that award.
         """
         file_name = self.award_json()
-        if not overwrite and file_name.exists():
+        # check if we already made this summary
+        overwrite = self.check_overwrite(file_name)
+        if not overwrite:
             return
 
         out = {}
@@ -244,6 +306,7 @@ class AwardSearchDownload:
         # export all awards to a json
         with open(file_name, "w") as f:
             json.dump(out, f, indent = 4, sort_keys=True)
+        self.export_downloaded_time(file_name)
 
     # -- Downloading awards
 
@@ -287,7 +350,7 @@ class AwardSearchDownload:
 
         # save the status url and file url so we can check the status and download the file later
         with open(pending_file, "w") as f:
-            json.dump(res, f)
+            json.dump(res, f, indent = 4)
 
         return True
 
@@ -430,7 +493,6 @@ class AwardSearchDownload:
         new_pending_list = awards.copy()
         while len(new_pending_list) > 0:
             i = 0
-            num_rows = len(new_pending_list) + starting_num
             # reset the list of pending awards
             pending_list = new_pending_list
             new_pending_list = []
@@ -487,45 +549,88 @@ class AwardSearchDownload:
 
     def generated_award_ids(self) -> list[str]:
         """A list of all of the long award IDs that we're looking for, saved in our award json."""
+        file = self.award_json()
+        if not file.exists():
+            return []
         with open(self.award_json()) as f:
             award_dict: dict = json.load(f)
         return list(award_dict.keys())
 
     # -- Combining awards
 
-    def combine_tag_awards(self, tag: str, overwrite: bool):
+    def _import_award_federal_account_funding(self, file: Path) -> pd.DataFrame:
+        """Given a FederalAccountFunding.csv file, import the table, add useful columns, and return a dataframe."""
+        df = pd.read_csv(file)
+        if len(df) == 0:
+            return df
+        pac = program_activity_codes()
+        # in the FederalAccountFunding file, the tas code is stored under the treasury_account_symbol column
+        df = df[df["treasury_account_symbol"] == self.tas_code]
+        df.sort_values(by="submission_period", inplace=True)
+        # add columns for fiscal year (2024), fiscal period (P3), program activity code (1,2,3,4), program activity title (Grants and fixed charges...)
+        df["fiscal_year"] = [per[2:6] for per in df["submission_period"]]
+        df["fiscal_period"] = [per[6:] for per in df["submission_period"]]
+        df["program_activity_code"] = [int(s//10) for s in df["object_class_code"]]
+        df["program_activity_title"] = [pac[s] for s in df["program_activity_code"]]
+        
+        df.sort_values(by = "submission_period", inplace = True)
+        # calculate outlay amounts. gross_outlay is cumulative per fiscal year
+        for fy in df["fiscal_year"].unique():
+            indices = (df["fiscal_year"] == fy)&(~pd.isna(df["gross_outlay_amount_FYB_to_period_end"]))
+            gross_outlays = df.loc[indices, "gross_outlay_amount_FYB_to_period_end"]
+            df.loc[indices, "transaction_outlay_amount"] = gross_outlays.diff().fillna(gross_outlays)
+        return df
+
+    def _import_award_transaction_history(self, file: Path) -> pd.DataFrame:
+        """In the TransactionHistory file, all relevant tas codes are combined into the column treasury_accounts_funding_this_award"""
+        df = pd.read_csv(file)
+        if len(df) == 0:
+            return df
+        tas_list = df["treasury_accounts_funding_this_award"].fillna("")
+        filtered = df[tas_list.str.contains(self.tas_code)]
+        return filtered
+    
+    def _import_award_subawards(self, file: Path) -> pd.DataFrame:
+        # in the TransactionHistory file, all relevant tas codes are combined into the column prime_award_treasury_accounts_funding_this_award
+        df = pd.read_csv(file)
+        if len(df) == 0:
+            return df
+        tas_list = df["prime_award_treasury_accounts_funding_this_award"].fillna("")
+        filtered = df[tas_list.str.contains(self.tas_code)]
+        return filtered
+
+    def combine_tag_awards(self, tag: str):
         """Combine all files for a specific tag into one file."""
         downloads_folder = self.downloads_folder()
         # get the file name to export to
+
         file_name = self.combined_csv(tag)
-        if file_name.exists() and not overwrite:
+        overwrite = self.check_overwrite(file_name)
+        if not overwrite:
             return
         print(f"Combining files for {tag}")
 
         # find all csvs in the award folder with the given tag
         df_list = []
+        awards = self.generated_award_ids()
+        if len(awards) == 0:
+            # no awards found. don't export this summary yet.
+            return
 
         # look specifically for the requested awards
-        for generated_award_id in self.generated_award_ids():
+        for generated_award_id in awards:
             award_folder = downloads_folder / generated_award_id
             for file in award_folder.rglob(f"*{tag}_1.csv"):
                 # import the csv as a pandas dataframe and filter it to only rows with this tas
-                df = pd.read_csv(file)
+                if tag == "FederalAccountFunding":
+                    df = self._import_award_federal_account_funding(file)
+                elif tag == "TransactionHistory":
+                    df = self._import_award_transaction_history(file)
+                elif tag == "Sub-Awards":
+                    df = self._import_award_subawards(file)
+                # add the pandas dataframe to the list of dataframes
                 if len(df) > 0:
-                    if tag == "FederalAccountFunding":
-                        # in the FederalAccountFunding file, the tas code is stored under the treasury_account_symbol column
-                        filtered = df[df["treasury_account_symbol"] == self.tas_code]
-                    elif tag == "TransactionHistory":
-                        # in the TransactionHistory file, all relevant tas codes are combined into the column treasury_accounts_funding_this_award
-                        tas_list = df["treasury_accounts_funding_this_award"].fillna("")
-                        filtered = df[tas_list.str.contains(self.tas_code)]
-                    elif tag == "Sub-Awards":
-                        # in the TransactionHistory file, all relevant tas codes are combined into the column prime_award_treasury_accounts_funding_this_award
-                        tas_list = df["prime_award_treasury_accounts_funding_this_award"].fillna("")
-                        filtered = df[tas_list.str.contains(self.tas_code)]
-
-                    # add the pandas dataframe to the list of dataframes
-                    df_list.append(filtered)
+                    df_list.append(df)
 
         if len(df_list) > 0:
             # combine all dataframes into one big dataframe
@@ -536,9 +641,10 @@ class AwardSearchDownload:
 
             # export to csv
             combined.to_csv(file_name, index = False)
+            self.export_downloaded_time(file_name)
 
 
-    def combine_awards(self, overwrite: bool = False):
+    def combine_awards(self):
         """For each tag, combine all of the data from the data folders we downloaded, filter down to just the TAS codes we care about, and export the combined data to a csv."""
         downloads_folder = self.downloads_folder()
         if not downloads_folder.exists():
@@ -546,10 +652,97 @@ class AwardSearchDownload:
 
         # iterate through FederalAccountFunding, TransactionHistory, and Sub-Awards
         for tag in self.valid_file_tags:
-            self.combine_tag_awards(tag, overwrite)
+            self.combine_tag_awards(tag)
 
-if __name__ == "__main__":
-    awards = AwardSearchDownload(usaid_tas(2024), award_ids = ["72061521CA00007"], summary_name = "72061521CA00007")
-    awards.search_awards()
-    awards.download_awards()
-    awards.combine_awards()
+    
+    # -- Checking sums
+
+    def import_program_activity(self) -> dict:
+        """Import the program activity summary as a dictionary."""
+        paf = self.program_activity_file()
+        if paf.exists():
+            with open(paf) as f:
+                return json.load(f)
+        else:
+            return {}
+
+    def import_federal_account_funding_df(self) -> pd.DataFrame | None:
+        """Import the FederalAccountFunding csv as a pandas dataframe."""
+        faf_file = self.combined_csv("FederalAccountFunding")
+        if faf_file.exists():
+            df = pd.read_csv(faf_file)
+            return df
+        else:
+            return None
+
+    def _compare_pa_to_faf(self, activity: dict, funding: pd.DataFrame, title: str) -> list[str]:
+        """Compare a program activity year to a FederalAccountFunding year, and return a list of strings to print out or write to file."""
+        lines = []
+        if len(activity) == 0 and len(funding) == 0:
+            return lines
+        pa_obligated = int(activity.get("obligated_amount", 0))
+        pa_gross_outlay = int(activity.get("gross_outlay_amount", 0))
+        faf_obligated = int(funding["transaction_obligated_amount"].sum())
+        faf_gross_outlay = int(funding["transaction_outlay_amount"].sum())
+        lines.append(f"  {title}")
+        lines.append(f"\tObligated:\t\tPA: ${pa_obligated:,}.\tFAF: ${faf_obligated:,}.\tMissing: ${(pa_obligated - faf_obligated):,}")
+        lines.append(f"\tGross Outlay:\tPA: ${pa_gross_outlay:,}.\tFAF: ${faf_gross_outlay:,}.\tMissing: ${(pa_gross_outlay - faf_gross_outlay):,}")
+        return lines
+
+    def _find_child(self, activity: dict, child: str):
+        children = activity.get("children", [])
+        for chil in children:
+            if chil["name"] == child:
+                return chil
+        return {}
+
+    def _export_summary_lines(self, lines: list[str]):
+        """Export lines of text to the summary check file."""
+        filename = self.summary_check_file()
+        output = "\n".join(lines)
+        with open(filename, "w") as f:
+            f.write(output)
+        self.export_downloaded_time(filename)
+
+    def check_summaries(self):
+        """Compare the downloaded program activity summary to the downloaded federal account funding table, and export the result to a text file."""
+        # check if we should overwrite
+        filename = self.summary_check_file()
+        overwrite = self.check_overwrite(filename)
+        if not overwrite:
+            return
+    
+        lines = [f"TAS code: {self.tas_code}"]
+        # import the program activity file and the federal account funding summary
+        program_activity = self.import_program_activity()
+        df = self.import_federal_account_funding_df()
+
+        # don't export anything if we're missing FAF or program activity
+        if len(program_activity) == 0 or df is None:
+            return
+
+        # iterate through fiscal years and sum data
+        for fiscal_year in self.fiscal_year_range():
+            # get activity summary and FAF rows for this fiscal year
+            activity_list: list[dict] = program_activity.get(str(fiscal_year))
+            funding = df[df["fiscal_year"] == fiscal_year]
+
+            if len(activity_list) > 0 or len(funding) > 0:
+                if len(activity_list) > 0:
+                    activity = activity_list[0]
+                else:
+                    activity = {}
+
+                # compare the totals
+                lines.append(f"\nFY{fiscal_year}")
+                lines = lines + self._compare_pa_to_faf(activity=activity, funding = funding, title = "Total")
+
+                # compare the subgroups
+                for code, child in program_activity_codes().items():
+                    subdf = funding[funding["program_activity_code"]==code]
+                    subchil = self._find_child(activity, child)
+                    if len(subdf) > 0 or len(subchil) > 0:
+                        lines = lines + self._compare_pa_to_faf(subchil, subdf, title = f"{code}X: {child}")
+
+        # write the result to file
+        self._export_summary_lines(lines)
