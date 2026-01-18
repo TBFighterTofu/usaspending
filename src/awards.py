@@ -577,8 +577,10 @@ class AwardSearchDownload:
         # calculate outlay amounts. gross_outlay is cumulative per fiscal year
         for fy in df["fiscal_year"].unique():
             indices = (df["fiscal_year"] == fy)&(~pd.isna(df["gross_outlay_amount_FYB_to_period_end"]))
-            gross_outlays = df.loc[indices, "gross_outlay_amount_FYB_to_period_end"]
-            df.loc[indices, "transaction_outlay_amount"] = gross_outlays.diff().fillna(gross_outlays)
+            for class_code in df.loc[indices, "object_class_code"].unique():
+                class_indices = indices & (df["object_class_code"] == class_code)
+                gross_outlays = df.loc[class_indices, "gross_outlay_amount_FYB_to_period_end"]
+                df.loc[class_indices, "transaction_outlay_amount"] = gross_outlays.diff().fillna(gross_outlays)
         return df
 
     def _import_award_transaction_history(self, file: Path) -> pd.DataFrame:
@@ -635,7 +637,7 @@ class AwardSearchDownload:
 
         if len(df_list) > 0:
             # combine all dataframes into one big dataframe
-            combined = pd.concat(df_list)
+            combined: pd.DataFrame = pd.concat(df_list)
 
             # remove duplicate rows
             combined.drop_duplicates(inplace=True)
@@ -644,7 +646,6 @@ class AwardSearchDownload:
             combined.to_csv(file_name, index = False)
 
             self.export_downloaded_time(file_name)
-
 
     def combine_awards(self):
         """For each tag, combine all of the data from the data folders we downloaded, filter down to just the TAS codes we care about, and export the combined data to a csv."""
@@ -655,8 +656,7 @@ class AwardSearchDownload:
         # iterate through FederalAccountFunding, TransactionHistory, and Sub-Awards
         for tag in self.valid_file_tags:
             self.combine_tag_awards(tag)
-
-    
+ 
     # -- Checking sums
 
     def import_program_activity(self) -> dict:
@@ -714,14 +714,15 @@ class AwardSearchDownload:
             f.write(output)
         self.export_downloaded_time(filename)
 
-    def check_summaries(self):
+    def check_summaries(self, overwrite: bool = False):
         """Compare the downloaded program activity summary to the downloaded federal account funding table, and export the result to a text file."""
         # check if we should overwrite
         filename = self.summary_check_file()
-        overwrite = self.check_overwrite(filename)
         if not overwrite:
-            return
-    
+            overwrite = self.check_overwrite(filename)
+            if not overwrite:
+                return
+        
         lines = [f"TAS code: {self.tas_code}"]
         # import the program activity file and the federal account funding summary
         program_activity = self.import_program_activity()
