@@ -6,12 +6,6 @@
 
 from src.awards import AwardSearchDownload
 
-#-------------------------------------------------------------
-#-------------------------------------------------------------
-#### FILL THESE OUT
-
-object_class_types = []
-object_class_codes = []
 
 tas_codes = []
 for year in [2024, 2023, 2022, 2021, 2020, 2019]:
@@ -22,15 +16,9 @@ for year in [2022, 2021, 2020, 2019, 2018]:
     tas_codes.append(f"072-{year}/{year+1}-1021-000")
     tas_codes.append(f"072-{year}/{year+5}-1021-000")
 
-
-
 for tas_code in tas_codes:
 
     print(f"Downloading data for TAS {tas_code}")
-
-    #### THANKS FOR FILLING THOSE OUT
-    #-------------------------------------------------------------
-    #-------------------------------------------------------------
 
     downloader = AwardSearchDownload(
         tas_code = tas_code,
