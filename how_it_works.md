@@ -395,8 +395,8 @@ We then:
 2. sort by submission period (e.g. FY2024P3)
 3. add a column called `fiscal_year`, computed from the submission period (e.g. 2024)
 4. add a column called `fiscal_period`, computed from the submission period (e.g. P3)
-5. add a column called `program_activity_code`, computed from object_class_code. the object class code gives us a granular category, e.g. 11.8, which tells us that kind of transaction this is. program_activity_code is just the first number of that code, e.g. 1.
-6. add a column called `program_activity_title`, which looks up the English meaning of that program_activity_code, e.g. Personnel compensation and benefits. That title will match up with the titles that we downloaded to program_activity.json.
+5. add a column called `pa_code`, computed from object_class_code. the object class code gives us a granular category, e.g. 11.8, which tells us that kind of transaction this is. pa_code is just the first number of that code, e.g. 1.
+6. add a column called `pa_title`, which looks up the English meaning of that pa_code, e.g. Personnel compensation and benefits. That title will match up with the titles that we downloaded to program_activity.json.
 7. add a column called `transaction_outlay_amount`. The downloaded file comes with a column called `gross_outlay_amount_FYB_to_period_end`. That column is cumulative for the given fiscal year. To get the gross outlay for just that period, we group the table by fiscal year, then get the difference in gross outlay amount from the previous period for each row.
 
 We combine all of our augmented FederalAccountFunding tables into one big table and save it to `data\summaries\072-019-2023_2024-1031-000\combined_FederalAccountFunding_072-019-2023_2024-1031-000.csv`.

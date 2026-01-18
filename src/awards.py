@@ -570,8 +570,8 @@ class AwardSearchDownload:
         # add columns for fiscal year (2024), fiscal period (P3), program activity code (1,2,3,4), program activity title (Grants and fixed charges...)
         df["fiscal_year"] = [per[2:6] for per in df["submission_period"]]
         df["fiscal_period"] = [per[6:] for per in df["submission_period"]]
-        df["program_activity_code"] = [int(s//10) for s in df["object_class_code"]]
-        df["program_activity_title"] = [pac[s] for s in df["program_activity_code"]]
+        df["pa_code"] = [int(s//10) for s in df["object_class_code"]]
+        df["pa_title"] = [pac[s] for s in df["pa_code"]]
         
         df.sort_values(by = "submission_period", inplace = True)
         # calculate outlay amounts. gross_outlay is cumulative per fiscal year
@@ -599,15 +599,16 @@ class AwardSearchDownload:
         filtered = df[tas_list.str.contains(self.tas_code)]
         return filtered
 
-    def combine_tag_awards(self, tag: str):
+    def combine_tag_awards(self, tag: str, overwrite: bool = False):
         """Combine all files for a specific tag into one file."""
         downloads_folder = self.downloads_folder()
         # get the file name to export to
 
         file_name = self.combined_csv(tag)
-        overwrite = self.check_overwrite(file_name)
         if not overwrite:
-            return
+            overwrite = self.check_overwrite(file_name)
+            if not overwrite:
+                return
         print(f"Combining files for {tag}")
 
         # find all csvs in the award folder with the given tag
@@ -641,6 +642,7 @@ class AwardSearchDownload:
 
             # export to csv
             combined.to_csv(file_name, index = False)
+
             self.export_downloaded_time(file_name)
 
 
@@ -747,7 +749,7 @@ class AwardSearchDownload:
 
                 # compare the subgroups
                 for code, child in program_activity_codes().items():
-                    subdf = funding[funding["program_activity_code"]==code]
+                    subdf = funding[funding["pa_code"]==code]
                     subchil = self._find_child(activity, child)
                     if len(subdf) > 0 or len(subchil) > 0:
                         lines = lines + self._compare_pa_to_faf(subchil, subdf, title = f"{code}X: {child}")
