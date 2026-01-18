@@ -510,6 +510,10 @@ class AwardSearchDownload:
                         print("The server aborted the connection because we've made too many requests. Waiting 5 minutes...")
                         new_pending_list.append(award_id)
                         time.sleep(60*5)
+                    elif "Max retries exceeded with url" in str(e):
+                        print("Connection problem. Waiting 5 minutes...")
+                        new_pending_list.append(award_id)
+                        time.sleep(60*5)
                     else:
                         print(e)
                         if stop_on_errors:
@@ -558,6 +562,61 @@ class AwardSearchDownload:
 
     # -- Combining awards
 
+    def _calculate_outlays_for_indices(self, df: pd.DataFrame, class_indices: pd.Series) -> None:
+        """For a given list of indices, calculate the per-period outlays from the gross outlays.
+        
+        Args:
+            df: the dataframe for all years and categories
+            class_indices: a true/false list that indicates which rows are grouped together
+
+        Output: updates the dataframe in the specified rows
+        
+        """
+        gross_outlays = df.loc[class_indices, "gross_outlay_amount_FYB_to_period_end"]   
+            # get the cumulative outlays
+        df.loc[class_indices, "transaction_outlay_amount"] = gross_outlays.diff().fillna(gross_outlays)   
+            # calculate as this row - prev row, or this row if there is no previous row
+
+    def _check_class_codes(self, df: pd.DataFrame, indices: pd.Series, fy: int) -> list[float]:
+        class_codes = df.loc[indices, "object_class_code"].unique()
+        if 0 in class_codes and len(class_codes) > 1:
+            # there are unknown classes. determine if they should be combined with the next class or not
+            if len(df.loc[indices & (df["submission_period"]==f"FY{fy}P12") & (df["object_class_code"]==0)]) == 0:
+                # there is no 12th period marked, which means this unknown category was combined with other categories in the last period. combine all categories as the same time series
+                class_codes = [code for code in class_codes if code > 0]
+                replacement_code = class_codes[0]
+                for period in range(1, 13):
+                    period_indices = (df["submission_period"]==f"FY{fy}P{period}")
+                    unknown_gross = df.loc[indices & period_indices & (df["object_class_code"]==0), "gross_outlay_amount_FYB_to_period_end"].sum()
+                    catchers = indices & period_indices & (df["object_class_code"]==replacement_code)
+                    df.loc[catchers, "gross_outlay_amount_FYB_to_period_end"] += unknown_gross
+                return class_codes
+            else:
+                # the unknowns have their own 12th period. treat them as their own thing
+                return class_codes
+        else:
+            # no unknowns. proceed as normal.
+            return class_codes
+
+    def _calculate_outlays_for_fiscal_year(self, df: pd.DataFrame, fy: int, outlays: pd.Series) -> None:
+        """For a given fiscal year, break up the rows by category and calculate the per-period outlays from the gross outlays.
+        
+        Args:
+            df: the dataframe for all years, categories in the TAS code
+            fy: fiscal year
+            outlays: a True/False list that indicates which rows we're looking at
+
+        Output: nothing. we're passing around a pointer to a dataframe, so the changes will be applied without us returning it
+        """
+        indices = (df["fiscal_year"] == fy)&outlays
+        if len(df[indices]) == 0:
+            return
+        class_codes = self._check_class_codes(df, indices, fy)
+                
+        for class_code in class_codes:
+            class_indices = indices & (df["object_class_code"] == class_code)
+            self._calculate_outlays_for_indices(df, class_indices)
+
     def _import_award_federal_account_funding(self, file: Path) -> pd.DataFrame:
         """Given a FederalAccountFunding.csv file, import the table, add useful columns, and return a dataframe."""
         df = pd.read_csv(file)
@@ -574,13 +633,10 @@ class AwardSearchDownload:
         df["pa_title"] = [pac[s] for s in df["pa_code"]]
         
         df.sort_values(by = "submission_period", inplace = True)
-        # calculate outlay amounts. gross_outlay is cumulative per fiscal year
-        for fy in df["fiscal_year"].unique():
-            indices = (df["fiscal_year"] == fy)&(~pd.isna(df["gross_outlay_amount_FYB_to_period_end"]))
-            for class_code in df.loc[indices, "object_class_code"].unique():
-                class_indices = indices & (df["object_class_code"] == class_code)
-                gross_outlays = df.loc[class_indices, "gross_outlay_amount_FYB_to_period_end"]
-                df.loc[class_indices, "transaction_outlay_amount"] = gross_outlays.diff().fillna(gross_outlays)
+        # calculate outlay amounts. gross_outlay is cumulative per fiscal year and category
+        outlays = (~pd.isna(df["gross_outlay_amount_FYB_to_period_end"]))&(df["gross_outlay_amount_FYB_to_period_end"]!=0)
+        for fy in df.loc[outlays, "fiscal_year"].unique():
+            self._calculate_outlays_for_fiscal_year(df, fy, outlays)
         return df
 
     def _import_award_transaction_history(self, file: Path) -> pd.DataFrame:
